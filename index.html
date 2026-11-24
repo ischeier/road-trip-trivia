@@ -87,6 +87,9 @@ function load(){
   return memStore||{rec:{},names:['Isabella','Zev'],mode:'study',timer:10,cat:'__all',diff:'any',hideRight:false};
 }
 var S=load();if(!S.diff)S.diff='any';
+if(!S.sel)S.sel=[];
+if(S.cat&&S.cat!=='__all'&&S.cat!=='__missed'){S.sel=[S.cat];S.cat='__all';}
+function inSel(x){return S.sel.length===0||S.sel.indexOf(x.c)>=0;}
 function dOk(x){return S.diff==='any'||x.d===S.diff;}
 function save(){memStore=S;try{window.localStorage.setItem(STORE_KEY,JSON.stringify(S));canSave=true;}catch(e){canSave=false;}}
 function rec(name){if(!S.rec[name])S.rec[name]={};return S.rec[name];}
@@ -110,10 +113,13 @@ function stopTick(){if(tick){clearInterval(tick);tick=null;}}
 function home(){
   stopTick();G=null;
   if(S.cat==='__missed'&&missedCount()===0){S.cat='__all';save();}
+  function isOn(k){if(k==='__missed')return S.cat==='__missed';if(S.cat==='__missed')return false;if(k==='__all')return S.sel.length===0;return S.sel.indexOf(k)>=0;}
   var catChips=['__all'].concat(CATS).concat(['__missed']).map(function(k){
     var label=k==='__all'?'All · shuffle ('+Q.filter(dOk).length+')':k==='__missed'?'Missed deck ('+missedCount()+')':k;
-    return '<button class="chip'+(S.cat===k?' on':'')+'" data-cat="'+esc(k)+'">'+esc(label)+'</button>';
+    return '<button class="chip'+(isOn(k)?' on':'')+'" data-cat="'+esc(k)+'">'+esc(label)+'</button>';
   }).join('');
+  var nSel=Q.filter(function(x){return inSel(x)&&dOk(x);}).length;
+  var selInfo=S.cat==='__missed'?'':'<p class="sub" style="margin:10px 2px 0;font-size:14px">'+nSel+' questions'+(S.sel.length?' from '+S.sel.length+(S.sel.length>1?' categories':' category'):'')+'. Tap more categories to add them.</p>';
   app.innerHTML=
     '<h1>Road Trip Trivia</h1><p class="sub">Two players, one phone, no service needed.</p>'+
     '<div class="label">Mode</div><div class="chips">'+
@@ -122,7 +128,7 @@ function home(){
     (S.mode==='battle'?'<div class="label">Players</div><div class="names">'+
       '<input id="n0" placeholder="Isabella" value="'+esc(pname(0))+'" maxlength="14" autocapitalize="words">'+
       '<input id="n1" placeholder="Zev" value="'+esc(pname(1))+'" maxlength="14" autocapitalize="words"></div>':'<p class="sub" style="margin-top:12px">'+esc(pname(0))+' &amp; '+esc(pname(1))+' play together with one shared score. Switch to Battle for separate points.</p>')+
-    '<div class="label">Questions</div><div class="chips" id="cats">'+catChips+'</div>'+
+    '<div class="label">Categories</div><div class="chips" id="cats">'+catChips+'</div>'+selInfo+
     (S.cat==='__missed'?'':'<div class="label">Difficulty</div><div class="chips">'+[['any','Mix of all'],['E','Easy'],['M','Medium'],['H','Hard']].map(function(d){return '<button class="chip'+(S.diff===d[0]?' on':'')+'" data-d="'+d[0]+'">'+d[1]+'</button>';}).join('')+'</div>')+
     '<div id="battleOpts"></div>'+
     '<div id="hideOpt"></div>'+
@@ -141,12 +147,19 @@ function home(){
   drawOpts();
   app.querySelectorAll('[data-mode]').forEach(function(b){b.onclick=function(){S.mode=b.getAttribute('data-mode');save();home();};});
   app.querySelectorAll('[data-d]').forEach(function(b){b.onclick=function(){S.diff=b.getAttribute('data-d');save();home();};});
-  app.querySelectorAll('[data-cat]').forEach(function(b){b.onclick=function(){S.cat=b.getAttribute('data-cat');save();home();};});
+  app.querySelectorAll('[data-cat]').forEach(function(b){b.onclick=function(){
+    var k=b.getAttribute('data-cat');
+    if(k==='__missed'){S.cat=(S.cat==='__missed')?'__all':'__missed';}
+    else if(k==='__all'){S.cat='__all';S.sel=[];}
+    else if(S.cat==='__missed'){S.cat='__all';S.sel=[k];}
+    else{var i=S.sel.indexOf(k);if(i>=0)S.sel.splice(i,1);else S.sel.push(k);if(S.sel.length===CATS.length)S.sel=[];}
+    save();home();};});
   function readNames(){var a=document.getElementById('n0'),b=document.getElementById('n1');if(!a||!b)return;S.names=[a.value,b.value];save();}
   var n0=document.getElementById('n0'),n1=document.getElementById('n1');
   if(n0){n0.oninput=readNames;n1.oninput=readNames;}
   document.getElementById('stats').onclick=function(){readNames();statsScreen();};
   var go=document.getElementById('go');
+  if(S.cat!=='__missed'&&nSel===0)go.disabled=true;
   go.onclick=function(){readNames();prepAudio();startSession();};
 }
 
@@ -163,7 +176,7 @@ function startSession(){
     G.queues=[0,1].map(function(i){return shuffle(Q.filter(function(x){return rec(names[i])[x.id]==='w';}));});
     if(!G.queues[0].length&&!G.queues[1].length){return home();}
   }else{
-    G.deck=shuffle(Q.filter(function(x){return (S.cat==='__all'||x.c===S.cat)&&dOk(x);}));
+    G.deck=shuffle(Q.filter(function(x){return inSel(x)&&dOk(x);}));
   }
   if(!nextCard()) return results();
   drawCard();
