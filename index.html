@@ -48,6 +48,12 @@
   .card .q{font-size:26px;line-height:1.25;font-weight:700;margin:0}
   .card .a{font-size:34px;line-height:1.15;font-weight:800;color:var(--good);margin:14px 0 0}
   .card .qs{font-size:16px;color:var(--mute);margin:0}
+  .timer{background:var(--card);border-radius:16px;padding:14px 18px;margin-bottom:12px;display:flex;align-items:center;gap:16px;border:2px solid transparent}
+  .tnum{font-size:46px;font-weight:800;color:var(--accent);min-width:56px;text-align:center;line-height:1}
+  .tbar{flex:1;height:12px;background:#2a3a63;border-radius:6px;overflow:hidden}
+  .tbar i{display:block;height:100%;background:var(--accent);border-radius:6px;transition:width .1s linear}
+  .timer.low .tnum{color:var(--bad)}.timer.low .tbar i{background:var(--bad)}
+  .timer.late{border-color:var(--bad)}.timer.late .tnum{color:var(--bad);font-size:30px;width:100%;min-width:0;text-align:left}
   .count{font-size:88px;font-weight:800;color:var(--accent);margin:6px 0 0;line-height:1}
   .count.low{color:var(--bad)}
   .turn{font-size:20px;font-weight:700;margin:4px 0 12px;text-align:center}
@@ -189,18 +195,16 @@ function board(){
 }
 function drawCard(){
   stopTick();
+  if(G.mode==='battle'&&G.phase==='front'){return startTimer();}
   var c=G.cur, who=G.names[G.turn], html='';
   html+=board();
   html+='<div class="meta"><span>'+(G.together?'Together':esc(who)+'\'s turn')+'</span><span>'+(G.missed?'Missed deck · ':'')+(G.mode==='battle'?'Battle':'Study')+'</span></div>';
   var dock='';
   if(G.phase==='front'){
     html+='<div class="card"><div class="cat">'+esc(c.c)+'</div><p class="q">'+esc(c.q)+'</p></div>';
-    if(G.mode==='battle') dock='<button class="primary" id="act">Start timer · '+G.timer+'s</button><button class="secondary" id="flip0">Flip without timer</button>';
-    else dock='<button class="primary" id="act">Flip card</button>';
+    dock='<button class="primary" id="act">Flip card</button>';
   }else if(G.phase==='running'){
-    html+='<div class="card'+(G.late?' late':'')+'"><div class="cat">'+esc(c.c)+'</div><p class="qs">'+esc(c.q)+'</p>'+
-      '<div class="count'+(G.left<=3?' low':'')+'" id="count">'+(G.late?'0':G.left)+'</div>'+
-      (G.late?'<p class="qs" style="margin-top:8px">Time\'s up</p>':'')+'</div>';
+    html+=timerPanel()+'<div class="card"><div class="cat">'+esc(c.c)+'</div><p class="q">'+esc(c.q)+'</p></div>';
     dock='<button class="primary" id="act">Flip card</button>';
   }else{
     html+='<div class="card"><div class="cat">'+esc(c.c)+'</div><p class="qs">'+esc(c.q)+'</p><p class="a">'+esc(c.a)+'</p></div>'+
@@ -210,10 +214,7 @@ function drawCard(){
   html+='<div class="spacer"></div><div class="dock">'+dock+'<button class="ghost" id="end">End session</button></div>';
   app.innerHTML=html;
   var act=document.getElementById('act');
-  if(G.phase==='front'&&G.mode==='battle'){
-    act.onclick=startTimer;
-    document.getElementById('flip0').onclick=function(){G.phase='back';drawCard();};
-  }else if(G.phase==='front'){
+  if(G.phase==='front'){
     act.onclick=function(){G.phase='back';drawCard();};
   }else if(G.phase==='running'){
     act.onclick=function(){stopTick();G.phase='back';drawCard();};
@@ -223,15 +224,20 @@ function drawCard(){
   }
   document.getElementById('end').onclick=function(){stopTick();results();};
 }
+function timerPanel(){
+  var pct=G.late?0:G.left/G.timer*100;
+  return '<div class="timer'+(G.late?' late':G.left<=3?' low':'')+'"><div class="tnum" id="count">'+(G.late?'Time\'s up':G.left)+'</div><div class="tbar"><i id="tbar" style="width:'+pct+'%"></i></div></div>';
+}
 function startTimer(){
   prepAudio();
   G.phase='running';G.left=G.timer;G.late=false;
-  var end=Date.now()+G.timer*1000;
+  var total=G.timer*1000,end=Date.now()+total;
   drawCard();
   tick=setInterval(function(){
-    var rem=Math.ceil((end-Date.now())/1000);
-    if(rem<=0){stopTick();G.left=0;G.late=true;beep();drawCard();return;}
-    if(rem!==G.left){G.left=rem;var el=document.getElementById('count');if(el){el.textContent=rem;el.className='count'+(rem<=3?' low':'');}}
+    var ms=end-Date.now(),rem=Math.ceil(ms/1000);
+    if(ms<=0){stopTick();G.left=0;G.late=true;beep();drawCard();return;}
+    var bar=document.getElementById('tbar');if(bar)bar.style.width=(ms/total*100)+'%';
+    if(rem!==G.left){G.left=rem;var el=document.getElementById('count');if(el){el.textContent=rem;el.parentNode.className='timer'+(rem<=3?' low':'');}}
   },100);
 }
 function mark(ok){
