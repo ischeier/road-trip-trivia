@@ -78,14 +78,16 @@ function shuffle(a){a=a.slice();for(var i=a.length-1;i>0;i--){var j=Math.floor(M
 var memStore=null, canSave=true;
 function load(){
   try{var s=window.localStorage.getItem(STORE_KEY);if(s){var o=JSON.parse(s);if(o&&o.rec)return o;}}catch(e){canSave=false;}
-  return memStore||{rec:{},names:['',''],mode:'study',timer:10,cat:'__all',hideRight:false};
+  return memStore||{rec:{},names:['Isabella','Zev'],mode:'study',timer:10,cat:'__all',hideRight:false};
 }
 var S=load();
 function save(){memStore=S;try{window.localStorage.setItem(STORE_KEY,JSON.stringify(S));canSave=true;}catch(e){canSave=false;}}
 function rec(name){if(!S.rec[name])S.rec[name]={};return S.rec[name];}
-function pname(i){return (S.names[i]||'').trim()||('Player '+(i+1));}
+function pname(i){return (S.names[i]||'').trim()||['Isabella','Zev'][i];}
+function ptitle(k){return k==='__together'?pname(0)+' & '+pname(1)+' together':k;}
+function isMissedTogether(id){var t=rec('__together')[id];if(t==='r')return false;if(t==='w')return true;return rec(pname(0))[id]==='w'||rec(pname(1))[id]==='w';}
 function missedCount(){
-  var n=0;Q.forEach(function(x){if(rec(pname(0))[x.id]==='w'||rec(pname(1))[x.id]==='w')n++;});return n;
+  var n=0;Q.forEach(function(x){if(S.mode==='study'?isMissedTogether(x.id):(rec(pname(0))[x.id]==='w'||rec(pname(1))[x.id]==='w'))n++;});return n;
 }
 
 /* ---------- audio beep (needs a tap first on iOS) ---------- */
@@ -110,9 +112,9 @@ function home(){
     '<div class="label">Mode</div><div class="chips">'+
       '<button class="chip'+(S.mode==='study'?' on':'')+'" data-mode="study">Study (flip cards)</button>'+
       '<button class="chip'+(S.mode==='battle'?' on':'')+'" data-mode="battle">Battle (timer)</button></div>'+
-    '<div class="label">Players</div><div class="names">'+
-      '<input id="n0" placeholder="Player 1" value="'+esc(S.names[0]||'')+'" maxlength="14" autocapitalize="words">'+
-      '<input id="n1" placeholder="Player 2" value="'+esc(S.names[1]||'')+'" maxlength="14" autocapitalize="words"></div>'+
+    (S.mode==='battle'?'<div class="label">Players</div><div class="names">'+
+      '<input id="n0" placeholder="Isabella" value="'+esc(pname(0))+'" maxlength="14" autocapitalize="words">'+
+      '<input id="n1" placeholder="Zev" value="'+esc(pname(1))+'" maxlength="14" autocapitalize="words"></div>':'<p class="sub" style="margin-top:12px">'+esc(pname(0))+' &amp; '+esc(pname(1))+' play together with one shared score. Switch to Battle for separate points.</p>')+
     '<div class="label">Questions</div><div class="chips" id="cats">'+catChips+'</div>'+
     '<div id="battleOpts"></div>'+
     '<div id="hideOpt"></div>'+
@@ -131,9 +133,9 @@ function home(){
   drawOpts();
   app.querySelectorAll('[data-mode]').forEach(function(b){b.onclick=function(){S.mode=b.getAttribute('data-mode');save();home();};});
   app.querySelectorAll('[data-cat]').forEach(function(b){b.onclick=function(){S.cat=b.getAttribute('data-cat');save();home();};});
-  function readNames(){S.names=[document.getElementById('n0').value,document.getElementById('n1').value];save();}
-  document.getElementById('n0').onchange=readNames;document.getElementById('n1').onchange=readNames;
-  document.getElementById('n0').oninput=readNames;document.getElementById('n1').oninput=readNames;
+  function readNames(){var a=document.getElementById('n0'),b=document.getElementById('n1');if(!a||!b)return;S.names=[a.value,b.value];save();}
+  var n0=document.getElementById('n0'),n1=document.getElementById('n1');
+  if(n0){n0.oninput=readNames;n1.oninput=readNames;}
   document.getElementById('stats').onclick=function(){readNames();statsScreen();};
   var go=document.getElementById('go');
   go.onclick=function(){readNames();prepAudio();startSession();};
@@ -143,8 +145,12 @@ function home(){
 function startSession(){
   var names=[pname(0),pname(1)];
   if(names[0]===names[1]){names[1]=names[1]+' 2';}
-  G={mode:S.mode,timer:S.timer,names:names,turn:0,scores:[0,0],asked:[0,0],cur:null,phase:'front',left:0,missed:S.cat==='__missed',late:false,count:0};
-  if(G.missed){
+  var together=S.mode==='study';
+  G={mode:S.mode,together:together,timer:S.timer,names:names,turn:0,scores:[0,0],asked:[0,0],right:0,wrong:0,cur:null,phase:'front',left:0,missed:S.cat==='__missed',late:false,count:0};
+  if(G.missed&&together){
+    G.queue=shuffle(Q.filter(function(x){return isMissedTogether(x.id);}));
+    if(!G.queue.length){return home();}
+  }else if(G.missed){
     G.queues=[0,1].map(function(i){return shuffle(Q.filter(function(x){return rec(names[i])[x.id]==='w';}));});
     if(!G.queues[0].length&&!G.queues[1].length){return home();}
   }else{
@@ -154,6 +160,13 @@ function startSession(){
   drawCard();
 }
 function nextCard(){
+  if(G.together){
+    G.phase='front';G.late=false;
+    if(G.missed){if(!G.queue.length)return false;G.cur=G.queue.shift();return true;}
+    var tr=rec('__together');
+    for(var k=0;k<G.deck.length;k++){if(!(S.hideRight&&tr[G.deck[k].id]==='r')){G.cur=G.deck.splice(k,1)[0];return true;}}
+    return false;
+  }
   var p=G.turn;
   if(G.missed){
     if(!G.queues[p].length){p=1-p;if(!G.queues[p].length)return false;G.turn=p;}
@@ -169,6 +182,7 @@ function nextCard(){
   return true;
 }
 function board(){
+  if(G.together)return '<div class="board"><div class="pl"><b>Right</b><span class="g">'+G.right+'</span></div><div class="pl"><b>To review</b><span class="r">'+G.wrong+'</span></div></div>';
   return '<div class="board">'+[0,1].map(function(i){
     return '<div class="pl'+(G.turn===i?' act':'')+'"><b>'+esc(G.names[i])+'</b><span>'+G.scores[i]+'</span></div>';
   }).join('')+'</div>';
@@ -177,7 +191,7 @@ function drawCard(){
   stopTick();
   var c=G.cur, who=G.names[G.turn], html='';
   html+=board();
-  html+='<div class="meta"><span>'+esc(who)+'\'s turn</span><span>'+(G.missed?'Missed deck · ':'')+(G.mode==='battle'?'Battle':'Study')+'</span></div>';
+  html+='<div class="meta"><span>'+(G.together?'Together':esc(who)+'\'s turn')+'</span><span>'+(G.missed?'Missed deck · ':'')+(G.mode==='battle'?'Battle':'Study')+'</span></div>';
   var dock='';
   if(G.phase==='front'){
     html+='<div class="card"><div class="cat">'+esc(c.c)+'</div><p class="q">'+esc(c.q)+'</p></div>';
@@ -190,7 +204,7 @@ function drawCard(){
     dock='<button class="primary" id="act">Flip card</button>';
   }else{
     html+='<div class="card"><div class="cat">'+esc(c.c)+'</div><p class="qs">'+esc(c.q)+'</p><p class="a">'+esc(c.a)+'</p></div>'+
-      '<div class="turn" style="margin-top:14px">Did '+esc(who)+' get it?</div>';
+      '<div class="turn" style="margin-top:14px">'+(G.together?'Did you get it?':'Did '+esc(who)+' get it?')+'</div>';
     dock='<button class="primary" id="right">Got it</button><button class="secondary" id="wrong">Missed</button>';
   }
   html+='<div class="spacer"></div><div class="dock">'+dock+'<button class="ghost" id="end">End session</button></div>';
@@ -221,6 +235,11 @@ function startTimer(){
   },100);
 }
 function mark(ok){
+  if(G.together){
+    var t=rec('__together'),cc=G.cur;t[cc.id]=ok?'r':'w';G.count++;
+    if(ok)G.right++;else{G.wrong++;if(G.missed)G.queue.push(cc);}
+    save();if(!nextCard())return results();drawCard();return;
+  }
   var p=G.turn,c=G.cur,r=rec(G.names[p]);
   r[c.id]=ok?'r':'w';G.asked[p]++;G.count++;
   if(ok)G.scores[p]++;
@@ -234,17 +253,21 @@ function mark(ok){
 /* ---------- RESULTS ---------- */
 function results(){
   stopTick();
-  var n=G.names,s=G.scores,a=G.asked;
-  var line;
-  if(!G.count)line='No questions answered.';
-  else if(s[0]===s[1])line='It\'s a tie.';
-  else line=esc(s[0]>s[1]?n[0]:n[1])+' wins this round.';
-  var m=missedCount();
+  var m=missedCount(),body;
+  if(G.together){
+    var tot=G.right+G.wrong;
+    body='<div class="center"><div class="big">'+G.right+' / '+tot+'</div><p class="sub">'+(tot?Math.round(G.right/tot*100)+'% right together.':'No cards answered.')+'</p></div>';
+  }else{
+    var n=G.names,s=G.scores,a=G.asked,line;
+    if(!G.count)line='No questions answered.';
+    else if(s[0]===s[1])line='It\'s a tie.';
+    else line=esc(s[0]>s[1]?n[0]:n[1])+' wins this round.';
+    body='<div class="center"><div class="big">'+s[0]+' – '+s[1]+'</div><p class="sub">'+line+'</p></div>'+
+      '<table><tr><th></th><th>Right</th><th>Missed</th></tr>'+
+      [0,1].map(function(i){return '<tr><td>'+esc(n[i])+'</td><td class="g">'+s[i]+'</td><td class="r">'+(a[i]-s[i])+'</td></tr>';}).join('')+'</table>';
+  }
   app.innerHTML=
-    '<h2 class="center" style="margin-top:28px">Round over</h2>'+
-    '<div class="center"><div class="big">'+s[0]+' – '+s[1]+'</div><p class="sub">'+line+'</p></div>'+
-    '<table><tr><th></th><th>Right</th><th>Missed</th></tr>'+
-    [0,1].map(function(i){return '<tr><td>'+esc(n[i])+'</td><td class="g">'+s[i]+'</td><td class="r">'+(a[i]-s[i])+'</td></tr>';}).join('')+'</table>'+
+    '<h2 class="center" style="margin-top:28px">Round over</h2>'+body+
     '<div class="spacer"></div><div class="dock">'+
     '<button class="primary" id="again">Play again</button>'+
     (m?'<button class="secondary" id="miss">Practice missed ('+m+')</button>':'')+
@@ -252,13 +275,12 @@ function results(){
   document.getElementById('again').onclick=function(){startSession();};
   var mb=document.getElementById('miss');if(mb)mb.onclick=function(){S.cat='__missed';save();startSession();};
   document.getElementById('home').onclick=home;
-  G.over=true;
 }
 
 /* ---------- STATS ---------- */
 var confirmReset=false;
 function statsScreen(){
-  var players=Object.keys(S.rec).filter(function(k){return Object.keys(S.rec[k]).length;});
+  var players=Object.keys(S.rec).filter(function(k){return Object.keys(S.rec[k]).length;}).sort(function(a,b){return (b==='__together')-(a==='__together');});
   var html='<h2>Stats</h2>';
   if(!players.length)html+='<p class="sub">Nothing yet. Play a round and your scores show up here.</p>';
   players.forEach(function(p){
@@ -269,7 +291,7 @@ function statsScreen(){
       tr+=cr;tw+=cw;
       rows+='<tr><td>'+esc(c)+'</td><td class="g">'+cr+'</td><td class="r">'+cw+'</td><td>'+(tot-cr-cw)+'</td></tr>';
     });
-    html+='<div class="label">'+esc(p)+' · '+tr+' right · '+tw+' to review</div>'+
+    html+='<div class="label">'+esc(ptitle(p))+' · '+tr+' right · '+tw+' to review</div>'+
       '<table><tr><th>Category</th><th>Right</th><th>Missed</th><th>New</th></tr>'+rows+'</table>';
   });
   html+='<p class="sub" style="font-size:14px">Right and Missed show each question\'s latest result. '+(canSave?'Saved on this phone.':'Stats last only while this page stays open.')+'</p>';
