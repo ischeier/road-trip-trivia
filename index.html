@@ -56,6 +56,7 @@
   .timer.late{border-color:var(--bad)}.timer.late .tnum{color:var(--bad);font-size:30px;width:100%;min-width:0;text-align:left}
   .timer.reading .tnum{font-size:24px;min-width:0;color:var(--mute)}
   .timer.reading .tbar i{background:#5a6d9a}
+  .sel{width:100%;background:var(--card);color:var(--ink);border:1.5px solid #3a4c78;border-radius:12px;padding:14px;font-size:17px;font-family:inherit}
   .count{font-size:88px;font-weight:800;color:var(--accent);margin:6px 0 0;line-height:1}
   .count.low{color:var(--bad)}
   .turn{font-size:20px;font-weight:700;margin:4px 0 12px;text-align:center}
@@ -109,7 +110,24 @@ function prepAudio(){try{if(!AC){var C=window.AudioContext||window.webkitAudioCo
 function beep(){try{if(!AC)return;var o=AC.createOscillator(),g=AC.createGain();o.frequency.value=660;o.connect(g);g.connect(AC.destination);g.gain.setValueAtTime(.25,AC.currentTime);g.gain.exponentialRampToValueAtTime(.001,AC.currentTime+.6);o.start();o.stop(AC.currentTime+.6);}catch(e){}try{if(navigator.vibrate)navigator.vibrate(300);}catch(e){}}
 
 /* ---------- read-aloud ---------- */
-var speechToken=0;
+var speechToken=0,VOICES=[];
+var BADV=/(fred|albert|bad news|bahh|bells|boing|bubbles|cellos|deranged|good news|hysterical|jester|junior|kathy|organ|princess|ralph|superstar|trinoids|whisper|wobble|zarvox)/i;
+var NICEV=/(ava|zoe|allison|samantha|evan|nathan|tom|susan|daniel|karen|moira|serena|aaron|nicky|joelle|noelle)/i;
+function vscore(v){var n=v.name||'',s=0;
+  if(BADV.test(n))s-=100;if(/premium/i.test(n))s+=50;if(/enhanced/i.test(n))s+=40;if(/siri/i.test(n))s+=30;
+  if(NICEV.test(n))s+=10;if(v.localService)s+=2;if(/en[-_]US/i.test(v.lang))s+=3;return s;}
+function loadVoices(){try{VOICES=(window.speechSynthesis.getVoices()||[]).filter(function(v){return /^en/i.test(v.lang);}).sort(function(a,b){return vscore(b)-vscore(a);});}catch(e){VOICES=[];}}
+function pickVoice(){
+  if(S.voiceName){for(var i=0;i<VOICES.length;i++){if(VOICES[i].name===S.voiceName)return VOICES[i];}}
+  return VOICES.length&&vscore(VOICES[0])>-100?VOICES[0]:null;
+}
+function fillVoiceSelect(){
+  var sel=document.getElementById('vsel');if(!sel)return;loadVoices();
+  var h='<option value="">Auto (best available)</option>';
+  VOICES.filter(function(v){return !BADV.test(v.name);}).forEach(function(v){h+='<option value="'+esc(v.name)+'"'+(S.voiceName===v.name?' selected':'')+'>'+esc(v.name)+'</option>';});
+  sel.innerHTML=h;
+}
+try{if('speechSynthesis' in window){loadVoices();window.speechSynthesis.onvoiceschanged=function(){fillVoiceSelect();};}}catch(e){}
 function cancelSpeech(){speechToken++;try{if('speechSynthesis' in window)window.speechSynthesis.cancel();}catch(e){}}
 function speak(text,done){
   if(!S.voice||!('speechSynthesis' in window)||typeof SpeechSynthesisUtterance==='undefined')return false;
@@ -118,7 +136,8 @@ function speak(text,done){
     var my=++speechToken,finished=false,started=false;
     var fin=function(){if(finished||my!==speechToken)return;finished=true;done();};
     var u=new SpeechSynthesisUtterance(text);
-    u.lang='en-US';u.rate=1;
+    var pv=pickVoice();if(pv){u.voice=pv;u.lang=pv.lang;}else{u.lang='en-US';}
+    u.rate=0.97;u.pitch=1;
     u.onstart=function(){started=true;};
     u.onend=fin;u.onerror=fin;
     setTimeout(function(){if(!started)fin();},2500);
@@ -162,11 +181,15 @@ function home(){
       '<div class="label">Time per answer</div><div class="chips">'+
       [5,10].map(function(t){return '<button class="chip'+(S.timer===t?' on':'')+'" data-t="'+t+'">'+t+' seconds</button>';}).join('')+'</div>'+
       '<div class="label">Read questions aloud</div><div class="chips">'+
-      '<button class="chip'+(S.voice?' on':'')+'" data-v="1">On</button><button class="chip'+(!S.voice?' on':'')+'" data-v="0">Off</button></div>' : '';
+      '<button class="chip'+(S.voice?' on':'')+'" data-v="1">On</button><button class="chip'+(!S.voice?' on':'')+'" data-v="0">Off</button></div>'+
+      (S.voice?'<div class="label">Voice</div><select id="vsel" class="sel"></select><button class="secondary" id="vtest" style="margin-top:10px">Hear a sample</button>':'') : '';
     document.getElementById('hideOpt').innerHTML = S.cat==='__missed' ? '' :
       '<div class="check'+(S.hideRight?' on':'')+'" id="hide" role="button"><i>'+(S.hideRight?'✓':'')+'</i>Skip questions a player already got right</div>';
     app.querySelectorAll('[data-t]').forEach(function(b){b.onclick=function(){S.timer=+b.getAttribute('data-t');save();drawOpts();};});
     app.querySelectorAll('[data-v]').forEach(function(b){b.onclick=function(){S.voice=b.getAttribute('data-v')==='1';save();drawOpts();};});
+    fillVoiceSelect();
+    var vs=document.getElementById('vsel');if(vs)vs.onchange=function(){S.voiceName=vs.value||'';save();};
+    var vt=document.getElementById('vtest');if(vt)vt.onclick=function(){speak('Which Greek hero killed the Minotaur?',function(){});};
     var h=document.getElementById('hide');if(h)h.onclick=function(){S.hideRight=!S.hideRight;save();drawOpts();};
   }
   drawOpts();
