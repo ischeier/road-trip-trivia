@@ -1,4 +1,4 @@
-var CACHE='rtt-v7';
+var CACHE='rtt-v8';
 var FILES=['./','index.html','manifest.webmanifest','icon-192.png','icon-512.png','apple-touch-icon.png'];
 self.addEventListener('install',function(e){e.waitUntil(caches.open(CACHE).then(function(c){
   return Promise.all(FILES.map(function(f){return fetch(new Request(f,{cache:'reload'})).then(function(r){if(!r.ok)throw new Error(f);return c.put(f,r);});}));

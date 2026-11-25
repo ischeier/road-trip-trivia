@@ -54,6 +54,8 @@
   .tbar i{display:block;height:100%;background:var(--accent);border-radius:6px;transition:width .1s linear}
   .timer.low .tnum{color:var(--bad)}.timer.low .tbar i{background:var(--bad)}
   .timer.late{border-color:var(--bad)}.timer.late .tnum{color:var(--bad);font-size:30px;width:100%;min-width:0;text-align:left}
+  .timer.reading .tnum{font-size:24px;min-width:0;color:var(--mute)}
+  .timer.reading .tbar i{background:#5a6d9a}
   .count{font-size:88px;font-weight:800;color:var(--accent);margin:6px 0 0;line-height:1}
   .count.low{color:var(--bad)}
   .turn{font-size:20px;font-weight:700;margin:4px 0 12px;text-align:center}
@@ -88,6 +90,7 @@ function load(){
 }
 var S=load();if(!S.diff)S.diff='any';
 if(!S.sel)S.sel=[];
+if(S.voice===undefined)S.voice=true;
 if(S.cat&&S.cat!=='__all'&&S.cat!=='__missed'){S.sel=[S.cat];S.cat='__all';}
 function inSel(x){return S.sel.length===0||S.sel.indexOf(x.c)>=0;}
 function dOk(x){return S.diff==='any'||x.d===S.diff;}
@@ -105,13 +108,32 @@ var AC=null;
 function prepAudio(){try{if(!AC){var C=window.AudioContext||window.webkitAudioContext;if(C)AC=new C();}if(AC&&AC.state==='suspended')AC.resume();}catch(e){}}
 function beep(){try{if(!AC)return;var o=AC.createOscillator(),g=AC.createGain();o.frequency.value=660;o.connect(g);g.connect(AC.destination);g.gain.setValueAtTime(.25,AC.currentTime);g.gain.exponentialRampToValueAtTime(.001,AC.currentTime+.6);o.start();o.stop(AC.currentTime+.6);}catch(e){}try{if(navigator.vibrate)navigator.vibrate(300);}catch(e){}}
 
+/* ---------- read-aloud ---------- */
+var speechToken=0;
+function cancelSpeech(){speechToken++;try{if('speechSynthesis' in window)window.speechSynthesis.cancel();}catch(e){}}
+function speak(text,done){
+  if(!S.voice||!('speechSynthesis' in window)||typeof SpeechSynthesisUtterance==='undefined')return false;
+  try{
+    window.speechSynthesis.cancel();
+    var my=++speechToken,finished=false,started=false;
+    var fin=function(){if(finished||my!==speechToken)return;finished=true;done();};
+    var u=new SpeechSynthesisUtterance(text);
+    u.lang='en-US';u.rate=1;
+    u.onstart=function(){started=true;};
+    u.onend=fin;u.onerror=fin;
+    setTimeout(function(){if(!started)fin();},2500);
+    setTimeout(fin,6000+text.length*120);
+    window.speechSynthesis.speak(u);
+    return true;
+  }catch(e){return false;}
+}
 var app=document.getElementById('app');
 var G=null, tick=null;
 function stopTick(){if(tick){clearInterval(tick);tick=null;}}
 
 /* ---------- HOME ---------- */
 function home(){
-  stopTick();G=null;
+  stopTick();cancelSpeech();G=null;
   if(S.cat==='__missed'&&missedCount()===0){S.cat='__all';save();}
   function isOn(k){if(k==='__missed')return S.cat==='__missed';if(S.cat==='__missed')return false;if(k==='__all')return S.sel.length===0;return S.sel.indexOf(k)>=0;}
   var catChips=['__all'].concat(CATS).concat(['__missed']).map(function(k){
@@ -138,10 +160,13 @@ function home(){
   function drawOpts(){
     document.getElementById('battleOpts').innerHTML = S.mode==='battle' ?
       '<div class="label">Time per answer</div><div class="chips">'+
-      [5,10].map(function(t){return '<button class="chip'+(S.timer===t?' on':'')+'" data-t="'+t+'">'+t+' seconds</button>';}).join('')+'</div>' : '';
+      [5,10].map(function(t){return '<button class="chip'+(S.timer===t?' on':'')+'" data-t="'+t+'">'+t+' seconds</button>';}).join('')+'</div>'+
+      '<div class="label">Read questions aloud</div><div class="chips">'+
+      '<button class="chip'+(S.voice?' on':'')+'" data-v="1">On</button><button class="chip'+(!S.voice?' on':'')+'" data-v="0">Off</button></div>' : '';
     document.getElementById('hideOpt').innerHTML = S.cat==='__missed' ? '' :
       '<div class="check'+(S.hideRight?' on':'')+'" id="hide" role="button"><i>'+(S.hideRight?'✓':'')+'</i>Skip questions a player already got right</div>';
     app.querySelectorAll('[data-t]').forEach(function(b){b.onclick=function(){S.timer=+b.getAttribute('data-t');save();drawOpts();};});
+    app.querySelectorAll('[data-v]').forEach(function(b){b.onclick=function(){S.voice=b.getAttribute('data-v')==='1';save();drawOpts();};});
     var h=document.getElementById('hide');if(h)h.onclick=function(){S.hideRight=!S.hideRight;save();drawOpts();};
   }
   drawOpts();
@@ -211,7 +236,7 @@ function board(){
 }
 function drawCard(){
   stopTick();
-  if(G.mode==='battle'&&G.phase==='front'){return startTimer();}
+  if(G.mode==='battle'&&G.phase==='front'){return beginRound();}
   var c=G.cur, who=G.names[G.turn], html='';
   html+=board();
   html+='<div class="meta"><span>'+(G.together?'Together':esc(who)+'\'s turn')+'</span><span>'+(G.missed?'Missed deck · ':'')+(G.mode==='battle'?'Battle':'Study')+'</span></div>';
@@ -219,9 +244,9 @@ function drawCard(){
   if(G.phase==='front'){
     html+='<div class="card"><div class="cat">'+esc(c.c)+'</div><p class="q">'+esc(c.q)+'</p></div>';
     dock='<button class="primary" id="act">Flip card</button>';
-  }else if(G.phase==='running'){
+  }else if(G.phase==='running'||G.phase==='reading'){
     html+=timerPanel()+'<div class="card"><div class="cat">'+esc(c.c)+'</div><p class="q">'+esc(c.q)+'</p></div>';
-    dock='<button class="primary" id="act">Flip card</button>';
+    dock='<button class="primary" id="act">Flip card</button>'+(G.phase==='reading'?'<button class="secondary" id="stopread">Stop reading</button>':'');
   }else{
     html+='<div class="card"><div class="cat">'+esc(c.c)+'</div><p class="qs">'+esc(c.q)+'</p><p class="a">'+esc(c.a)+'</p></div>'+
       '<div class="turn" style="margin-top:14px">'+(G.together?'Did you get it?':'Did '+esc(who)+' get it?')+'</div>';
@@ -232,15 +257,24 @@ function drawCard(){
   var act=document.getElementById('act');
   if(G.phase==='front'){
     act.onclick=function(){G.phase='back';drawCard();};
-  }else if(G.phase==='running'){
-    act.onclick=function(){stopTick();G.phase='back';drawCard();};
+  }else if(G.phase==='running'||G.phase==='reading'){
+    act.onclick=function(){stopTick();cancelSpeech();G.phase='back';drawCard();};
+    var sr=document.getElementById('stopread');if(sr)sr.onclick=function(){cancelSpeech();startTimer();};
   }else{
     document.getElementById('right').onclick=function(){mark(true);};
     document.getElementById('wrong').onclick=function(){mark(false);};
   }
-  document.getElementById('end').onclick=function(){stopTick();results();};
+  document.getElementById('end').onclick=function(){stopTick();cancelSpeech();results();};
+}
+function beginRound(){
+  G.phase='reading';G.left=G.timer;G.late=false;
+  drawCard();
+  var mine=G.cur;
+  var ok=speak(G.cur.q,function(){if(G&&G.phase==='reading'&&G.cur===mine)startTimer();});
+  if(!ok)startTimer();
 }
 function timerPanel(){
+  if(G.phase==='reading')return '<div class="timer reading"><div class="tnum">Listen…</div><div class="tbar"><i style="width:100%"></i></div></div>';
   var pct=G.late?0:G.left/G.timer*100;
   return '<div class="timer'+(G.late?' late':G.left<=3?' low':'')+'"><div class="tnum" id="count">'+(G.late?'Time\'s up':G.left)+'</div><div class="tbar"><i id="tbar" style="width:'+pct+'%"></i></div></div>';
 }
@@ -274,7 +308,7 @@ function mark(ok){
 
 /* ---------- RESULTS ---------- */
 function results(){
-  stopTick();
+  stopTick();cancelSpeech();
   var m=missedCount(),body;
   if(G.together){
     var tot=G.right+G.wrong;
