@@ -126,6 +126,7 @@ function fillVoiceSelect(){
   var h='<option value="">Auto (best available)</option>';
   VOICES.filter(function(v){return !BADV.test(v.name);}).forEach(function(v){h+='<option value="'+esc(v.name)+'"'+(S.voiceName===v.name?' selected':'')+'>'+esc(v.name)+'</option>';});
   sel.innerHTML=h;
+  var vc=document.getElementById('vcount');if(vc)vc.textContent=VOICES.length+' English voices found on this phone';
 }
 try{if('speechSynthesis' in window){loadVoices();window.speechSynthesis.onvoiceschanged=function(){fillVoiceSelect();};}}catch(e){}
 function cancelSpeech(){speechToken++;try{if('speechSynthesis' in window)window.speechSynthesis.cancel();}catch(e){}}
@@ -182,14 +183,14 @@ function home(){
       [5,10].map(function(t){return '<button class="chip'+(S.timer===t?' on':'')+'" data-t="'+t+'">'+t+' seconds</button>';}).join('')+'</div>'+
       '<div class="label">Read questions aloud</div><div class="chips">'+
       '<button class="chip'+(S.voice?' on':'')+'" data-v="1">On</button><button class="chip'+(!S.voice?' on':'')+'" data-v="0">Off</button></div>'+
-      (S.voice?'<div class="label">Voice</div><select id="vsel" class="sel"></select><button class="secondary" id="vtest" style="margin-top:10px">Hear a sample</button>':'') : '';
+      (S.voice?'<div class="label">Voice</div><select id="vsel" class="sel"></select><div id="vcount" class="muted" style="font-size:13px;margin-top:6px"></div><button class="secondary" id="vtest" style="margin-top:10px">Hear a sample</button>':'') : '';
     document.getElementById('hideOpt').innerHTML = S.cat==='__missed' ? '' :
       '<div class="check'+(S.hideRight?' on':'')+'" id="hide" role="button"><i>'+(S.hideRight?'✓':'')+'</i>Skip questions a player already got right</div>';
     app.querySelectorAll('[data-t]').forEach(function(b){b.onclick=function(){S.timer=+b.getAttribute('data-t');save();drawOpts();};});
     app.querySelectorAll('[data-v]').forEach(function(b){b.onclick=function(){S.voice=b.getAttribute('data-v')==='1';save();drawOpts();};});
     fillVoiceSelect();
     var vs=document.getElementById('vsel');if(vs)vs.onchange=function(){S.voiceName=vs.value||'';save();};
-    var vt=document.getElementById('vtest');if(vt)vt.onclick=function(){speak('Which Greek hero killed the Minotaur?',function(){});};
+    var vt=document.getElementById('vtest');if(vt)vt.onclick=function(){fillVoiceSelect();speak('Which Greek hero killed the Minotaur?',function(){});};
     var h=document.getElementById('hide');if(h)h.onclick=function(){S.hideRight=!S.hideRight;save();drawOpts();};
   }
   drawOpts();
